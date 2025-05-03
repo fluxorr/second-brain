@@ -1,11 +1,10 @@
-import express, {Request, Response, NextFunction, raw} from "express";
+import express, { Request, Response } from "express";
 import mongoose from 'mongoose';
 import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
-import { userModel } from "./db";
+import { userModel, ContentModel, Tag } from "./db";
 import { userSchema } from "./zodSchemas";
-
-
+import { userMiddleware } from "./middleware";
 
 const app = express();
 const PORT = 3000;
@@ -21,7 +20,7 @@ mongoose.connect('mongodb+srv://admin:Rahul%230552@cluster0.ykigmhz.mongodb.net/
 });
 
 
-app.post('/v1/signup', async (req: Request,res: Response): Promise<any> => {
+app.post('/v1/signup', async (req: Request, res: Response): Promise<any> => {
   const parsedUserData = userSchema.safeParse(req.body);
   if (!parsedUserData.success) {
     return res.status(411).json({ errors: parsedUserData.error.errors });
@@ -36,9 +35,9 @@ app.post('/v1/signup', async (req: Request,res: Response): Promise<any> => {
 
   const hashedPassword = await argon2.hash(password, {
     type: argon2.argon2id,
-    memoryCost: 4096,  
-    timeCost: 3,       
-    parallelism: 1     
+    memoryCost: 4096,
+    timeCost: 3,
+    parallelism: 1
   });
   await userModel.create({ username, password: hashedPassword });
 
@@ -46,26 +45,26 @@ app.post('/v1/signup', async (req: Request,res: Response): Promise<any> => {
 });
 
 
-app.post('/v1/signin', async(req: Request, res: Response): Promise<any> => {
+app.post('/v1/signin', async (req: Request, res: Response): Promise<any> => {
   const parsedUserData = userSchema.safeParse(req.body);
   if (!parsedUserData.success) {
     return res.status(411).json({ errors: parsedUserData.error.errors });
   }
 
   const { username, password } = parsedUserData.data;
-  const user = await userModel.findOne({username});
+  const user = await userModel.findOne({ username });
   if (!user) {
     return res.status(401).json({ message: "Invalid username or password" });
   }
 
   try {
-    if (await argon2.verify( user.password , password)) {
+    if (await argon2.verify(user.password, password)) {
       const token = jwt.sign(
         { username: user.username, id: user._id },
         "8Zz5tw0Ionm3XPZZfN0NOml3z9FMfmpgXwovR9fp6ryDIoGRM8EPHAB6iHsc0fb"
       );
       return res.status(200).json({ message: "Login successful", token });
-      
+
     } else {
       return res.status(401).json({ message: "Invalid username or password" });
     }
@@ -76,10 +75,79 @@ app.post('/v1/signin', async(req: Request, res: Response): Promise<any> => {
   }
 })
 
+app.post('/v1/addContent', userMiddleware, async (req: Request, res: Response): Promise<any> => {
+  const type = req.body.type;
+  const title = req.body.title;
+  const link = req.body.link;
+  const tagNames = req.body.tags;
+
+  const tagPromises = tagNames.map(async (name: string) => {
+    let tag = await Tag.findOne({ name });
+    if (!tag) tag = await Tag.create({ name });
+    return tag.name;
+  });
+
+  const tagIds = await Promise.all(tagPromises);
+
+  if (!type || !title || !link) {
+    return res.status(401).json({ message: "Please check your inputs" })
+  } else {
+    ContentModel.create({
+      type: type,
+      link: link,
+      title: title,
+      tags: tagIds,
+      //@ts-ignore
+      userId: req.userId
+    })
+    return res.status(200).json({ message: "Content added succesfully" })
+  }
+})
+
+app.get('/v1/content', userMiddleware, async (req: Request, res: Response,) => {
+
+  //@ts-ignore
+  const userId = req.userId;
+  const content = await ContentModel.find({
+    userId: userId
+  }).populate("userId", "username")
+
+  res.json({
+    content
+  })
+
+})
+
+app.delete('/v1/delete', userMiddleware, async (req: Request, res: Response): Promise<any> => {
+  const contentId = req.body.contentId;
+
+  if (!contentId) {
+    return res.status(400).json({ message: "contentId is required" });
+  }
+
+  try {
+    const result = await ContentModel.deleteOne({
+      _id: contentId,
+      //@ts-ignore
+      userId: req.userId
+    });
+
+    if (result.deletedCount === 0) {
+      res.status(404).json({ message: "Content not found or not authorized" });
+    }
+
+    return res.status(200).json({ message: "Deleted Successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
+  }
+});
+
+
 
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`running http://localhost:${PORT}`);
 });
+
 
 
 
