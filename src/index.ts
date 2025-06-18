@@ -2,14 +2,19 @@ import express, { Request, Response } from "express";
 import mongoose from 'mongoose';
 import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
-import { userModel, ContentModel, Tag } from "./db";
+import { ContentModel, userModel, Tag, LinkModel } from "./db";
 import { userSchema } from "./zodSchemas";
 import { userMiddleware } from "./middleware";
+import { random } from "./utils";
+import cors from "cors";
+
+import { JWT_PASSWORD } from "./config";
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+app.use(cors())
 
 mongoose.connect('mongodb+srv://admin:Rahul%230552@cluster0.ykigmhz.mongodb.net/', {
   dbName: 'second-brain',
@@ -61,7 +66,7 @@ app.post('/v1/signin', async (req: Request, res: Response): Promise<any> => {
     if (await argon2.verify(user.password, password)) {
       const token = jwt.sign(
         { username: user.username, id: user._id },
-        "8Zz5tw0Ionm3XPZZfN0NOml3z9FMfmpgXwovR9fp6ryDIoGRM8EPHAB6iHsc0fb"
+        JWT_PASSWORD
       );
       return res.status(200).json({ message: "Login successful", token });
 
@@ -141,6 +146,79 @@ app.delete('/v1/delete', userMiddleware, async (req: Request, res: Response): Pr
     res.status(500).json({ message: "Server error", error });
   }
 });
+
+
+
+
+app.post("/v1/brain/share", userMiddleware, async (req, res) => {
+  const share = req.body.share;
+  if (share) {
+    const existingLink = await LinkModel.findOne({
+      userId: req.userId
+    });
+
+    if (existingLink) {
+      res.json({
+        hash: existingLink.hash
+      })
+      return;
+    }
+    const hash = random(10);
+    await LinkModel.create({
+      userId: req.userId,
+      hash: hash
+    })
+
+    res.json({
+      hash
+    })
+  } else {
+    await LinkModel.deleteOne({
+      userId: req.userId
+    });
+
+    res.json({
+      message: "Removed link"
+    })
+  }
+})
+
+app.get("/v1/brain/:shareLink", async (req, res) => {
+  const hash = req.params.shareLink;
+
+  const link = await LinkModel.findOne({
+    hash
+  });
+
+  if (!link) {
+    res.status(411).json({
+      message: "Sorry incorrect input"
+    })
+    return;
+  }
+  // userId
+  const content = await ContentModel.find({
+    userId: link.userId
+  })
+
+  console.log(link);
+  const user = await userModel.findOne({
+    _id: link.userId
+  })
+
+  if (!user) {
+    res.status(411).json({
+      message: "user not found"
+    })
+    return;
+  }
+
+  res.json({
+    username: user.username,
+    content: content
+  })
+
+})
 
 
 

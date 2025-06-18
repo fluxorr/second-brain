@@ -23,3 +23,10 @@ const tagSchema = new Schema({
 export const Tag = model('Tag', tagSchema);
 
 
+
+const LinkSchema = new Schema({
+    hash: String,
+    userId: { type: Types.ObjectId, ref: 'User', required: true, unique: true },
+})
+export const LinkModel = model("Links", LinkSchema);
+

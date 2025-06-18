@@ -19,9 +19,13 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const db_1 = require("./db");
 const zodSchemas_1 = require("./zodSchemas");
 const middleware_1 = require("./middleware");
+const utils_1 = require("./utils");
+const cors_1 = __importDefault(require("cors"));
+const config_1 = require("./config");
 const app = (0, express_1.default)();
 const PORT = 3000;
 app.use(express_1.default.json());
+app.use((0, cors_1.default)());
 mongoose_1.default.connect('mongodb+srv://admin:Rahul%230552@cluster0.ykigmhz.mongodb.net/', {
     dbName: 'second-brain',
 }).then(() => {
@@ -60,7 +64,7 @@ app.post('/v1/signin', (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
     try {
         if (yield argon2_1.default.verify(user.password, password)) {
-            const token = jsonwebtoken_1.default.sign({ username: user.username, id: user._id }, "8Zz5tw0Ionm3XPZZfN0NOml3z9FMfmpgXwovR9fp6ryDIoGRM8EPHAB6iHsc0fb");
+            const token = jsonwebtoken_1.default.sign({ username: user.username, id: user._id }, config_1.JWT_PASSWORD);
             return res.status(200).json({ message: "Login successful", token });
         }
         else {
@@ -128,6 +132,66 @@ app.delete('/v1/delete', middleware_1.userMiddleware, (req, res) => __awaiter(vo
     catch (error) {
         res.status(500).json({ message: "Server error", error });
     }
+}));
+app.post("/v1/brain/share", middleware_1.userMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const share = req.body.share;
+    if (share) {
+        const existingLink = yield db_1.LinkModel.findOne({
+            userId: req.userId
+        });
+        if (existingLink) {
+            res.json({
+                hash: existingLink.hash
+            });
+            return;
+        }
+        const hash = (0, utils_1.random)(10);
+        yield db_1.LinkModel.create({
+            userId: req.userId,
+            hash: hash
+        });
+        res.json({
+            hash
+        });
+    }
+    else {
+        yield db_1.LinkModel.deleteOne({
+            userId: req.userId
+        });
+        res.json({
+            message: "Removed link"
+        });
+    }
+}));
+app.get("/v1/brain/:shareLink", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const hash = req.params.shareLink;
+    const link = yield db_1.LinkModel.findOne({
+        hash
+    });
+    if (!link) {
+        res.status(411).json({
+            message: "Sorry incorrect input"
+        });
+        return;
+    }
+    // userId
+    const content = yield db_1.ContentModel.find({
+        userId: link.userId
+    });
+    console.log(link);
+    const user = yield db_1.userModel.findOne({
+        _id: link.userId
+    });
+    if (!user) {
+        res.status(411).json({
+            message: "user not found"
+        });
+        return;
+    }
+    res.json({
+        username: user.username,
+        content: content
+    });
 }));
 app.listen(PORT, () => {
     console.log(`running http://localhost:${PORT}`);
